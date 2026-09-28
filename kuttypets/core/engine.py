@@ -119,6 +119,41 @@ class OmniPetEngine:
             contact = float(bounds.get("grip_right_reach", 22.0 * rs))
             return float(wall_x) - contact + grip_bite
 
+    def start_drag(self, cursor_x: float, cursor_y: float) -> None:
+        """Begins interactive dragging at cursor position."""
+        self.is_dragging = True
+        self.drag_offset_x = cursor_x - self.x
+        self.drag_offset_y = cursor_y - self.y
+        self.state = "DRAGGING"
+        self.vx = 0.0
+        self.vy = 0.0
+        self.mouse_history = [(time.time(), cursor_x, cursor_y)]
+
+    def update_drag(self, cursor_x: float, cursor_y: float) -> None:
+        """Updates pet position while being dragged."""
+        if not self.is_dragging:
+            return
+        self.x = cursor_x - self.drag_offset_x
+        self.y = cursor_y - self.drag_offset_y
+        now = time.time()
+        self.mouse_history.append((now, cursor_x, cursor_y))
+        if len(self.mouse_history) > 8:
+            self.mouse_history.pop(0)
+
+    def end_drag(self) -> None:
+        """Ends drag and launches pet with throw momentum."""
+        if not self.is_dragging:
+            return
+        self.is_dragging = False
+        self.state = "FALLING"
+        if len(self.mouse_history) >= 2:
+            t0, x0, y0 = self.mouse_history[0]
+            t1, x1, y1 = self.mouse_history[-1]
+            dt = max(0.016, t1 - t0)
+            self.vx = (x1 - x0) / dt
+            self.vy = (y1 - y0) / dt
+        self.mouse_history.clear()
+
     def tick(self) -> None:
         now = time.time()
         dt = min(0.05, max(0.001, now - self.last_time))

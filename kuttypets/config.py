@@ -113,13 +113,20 @@ CHARACTER_TEMPLATES: Dict[str, Dict[str, Any]] = {
 }
 
 def get_base_characters_dir() -> str:
-    """Resolve character asset directory dynamically across dev and installed environments."""
-    # 1. Check local package directory
+    """Resolve character asset directory dynamically across dev, installed, and frozen PyInstaller environments."""
+    # 1. Check if running inside PyInstaller bundle (sys._MEIPASS)
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        for sub in ("kuttypets/characters", "characters"):
+            bundle_dir = os.path.join(sys._MEIPASS, sub)
+            if os.path.isdir(bundle_dir):
+                return bundle_dir
+
+    # 2. Check local package directory
     local_pkg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "characters")
     if os.path.isdir(local_pkg) and any(os.path.isdir(os.path.join(local_pkg, d)) for d in os.listdir(local_pkg)):
         return local_pkg
     
-    # 2. Check user data directories
+    # 3. Check user data directories
     if sys.platform == "darwin":
         user_dir = os.path.expanduser("~/Library/Application Support/kuttypets/characters")
     elif sys.platform == "win32":

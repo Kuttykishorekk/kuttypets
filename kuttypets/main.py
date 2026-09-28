@@ -10,6 +10,18 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
+# Ensure stdout/stderr are valid streams on Windows windowed mode (console=False)
+if sys.stdout is None:
+    try:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    except Exception:
+        pass
+if sys.stderr is None:
+    try:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    except Exception:
+        pass
+
 # Ensure package root is in sys.path when bundled by PyInstaller as standalone script
 pkg_dir = Path(__file__).resolve().parent
 if str(pkg_dir.parent) not in sys.path:
@@ -60,6 +72,7 @@ def main():
     parser.add_argument("--mode", "-m", default="calm", choices=["calm", "lively", "stealth"], help="Presence mode")
     parser.add_argument("--scale", "-s", type=float, default=0.68, help="Render scale (default 0.68)")
     parser.add_argument("--list-characters", action="store_true", help="List all available characters")
+    parser.add_argument("--headless-check", "--test", action="store_true", help="Run automated headless self-test and exit")
     parser.add_argument("--autostart-enable", action="store_true", help="Enable automatic start on system boot/login")
     parser.add_argument("--autostart-disable", action="store_true", help="Disable automatic start on system boot/login")
     parser.add_argument("--autostart-status", action="store_true", help="Check if autostart on boot is currently enabled")
@@ -112,6 +125,19 @@ def main():
     screen = adapter.get_screen_geometry()
     metrics = adapter.get_layout_metrics()
     print(f"[KuttyPets] Display: {screen['width']}x{screen['height']} (scale={screen.get('scale', 1.0)}) | Layout: rounding={metrics.get('rounding')}, border={metrics.get('border_size')}", flush=True)
+
+    # Handle Headless Self-Test verification
+    if args.headless_check:
+        print("[KuttyPets] Executing headless self-test loop...", flush=True)
+        assert len(characters) > 0, "No characters discovered"
+        assert len(rigs) > 0, f"No sprite rigs loaded for {args.character}"
+        for step in range(25):
+            engine.tick()
+        autostart_stat = AutostartManager.is_enabled()
+        print(f"[KuttyPets] Engine state after 25 ticks: {engine.state} at ({engine.x:.1f}, {engine.y:.1f})")
+        print(f"[KuttyPets] Autostart test query: {autostart_stat}")
+        print("[KuttyPets] Headless self-test PASSED successfully.", flush=True)
+        return
 
     # Launch cross-platform GUI overlay
     try:

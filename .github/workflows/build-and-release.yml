@@ -28,12 +28,22 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pillow pywin32 PyQt6
+          pip install pyinstaller pillow pywin32 PyQt6 pytest
           pip install -e .[windows]
+
+      - name: Run Test Suite
+        run: |
+          python -m unittest discover -v tests
 
       - name: Build Standalone Executable
         run: |
           pyinstaller packaging/windows/kuttypets.spec
+
+      - name: Verify Built Windows Executable
+        shell: pwsh
+        run: |
+          .\dist\KuttyPets.exe --headless-check
+          .\dist\KuttyPets.exe --list-characters
 
       - name: Package Windows Artifact
         shell: pwsh
@@ -64,8 +74,12 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pillow pyobjc-framework-Cocoa pyobjc-framework-Quartz PyQt6
+          pip install pyinstaller pillow pyobjc-framework-Cocoa pyobjc-framework-Quartz PyQt6 pytest
           pip install -e .[macos]
+
+      - name: Run Test Suite
+        run: |
+          python -m unittest discover -v tests
 
       - name: Build macOS App Bundle
         run: |
@@ -75,6 +89,11 @@ jobs:
                       --add-data "kuttypets/characters:kuttypets/characters" \
                       --osx-bundle-identifier "com.kutty.kuttypets" \
                       kuttypets/main.py
+
+      - name: Verify Built macOS App
+        run: |
+          ./dist/KuttyPets.app/Contents/MacOS/KuttyPets --headless-check
+          ./dist/KuttyPets.app/Contents/MacOS/KuttyPets --list-characters
 
       - name: Package macOS Artifact
         run: |
@@ -111,8 +130,12 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pillow PyGObject pycairo PyQt6
+          pip install pyinstaller pillow PyGObject pycairo PyQt6 pytest
           pip install -e .[linux]
+
+      - name: Run Test Suite
+        run: |
+          python -m unittest discover -v tests
 
       - name: Build Linux Standalone Binary
         run: |
@@ -121,6 +144,11 @@ jobs:
                       --noconfirm \
                       --add-data "kuttypets/characters:kuttypets/characters" \
                       kuttypets/main.py
+
+      - name: Verify Built Linux Binary
+        run: |
+          ./dist/kuttypets --headless-check
+          ./dist/kuttypets --list-characters
 
       - name: Package Linux Artifact
         run: |

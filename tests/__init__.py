@@ -1,0 +1,3 @@
+"""
+KuttyPets Automated Test Suite.
+"""
