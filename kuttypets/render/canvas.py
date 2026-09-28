@@ -89,12 +89,12 @@ class KuttyPetsOverlay(QWidget if HAS_PYQT else object):
         anim = self.engine.anim_tick
         st = self.engine.state_timer
 
-        if self.engine.adapter.__class__.__name__ == "LinuxHyprlandAdapter":
-            pass
-
         # Spider-Man frame selection
         if "shime1" in self.qpixmaps:
-            if state == "SWINGING":
+            if state == "DRAGGING":
+                drag = ["shime20", "shime21"]
+                return drag[int(anim * 6.0) % len(drag)] if "shime20" in self.qpixmaps else "shime4"
+            elif state == "SWINGING":
                 hang = ["shime15", "shime16", "shime17"]
                 return hang[int(anim * 3.5) % len(hang)]
             elif state in ("CLINGING", "TOP_CRAWL", "BOTTOM_CRAWL"):
@@ -122,17 +122,29 @@ class KuttyPetsOverlay(QWidget if HAS_PYQT else object):
             return "shime1"
         else:
             # Genshin format (Hu Tao, Klee, Ayaka, Venti)
-            if state in ("CLINGING", "TOP_CRAWL", "BOTTOM_CRAWL"):
+            if state == "DRAGGING":
+                drag = [f"drag{i}" for i in range(1, 7) if f"drag{i}" in self.qpixmaps]
+                return drag[int(anim * 8.0) % len(drag)] if drag else "id1_1"
+            elif state in ("CLINGING", "TOP_CRAWL", "BOTTOM_CRAWL"):
                 climb = ["climb1", "climb2", "climb3"]
                 return climb[int(anim * 6.0) % len(climb)] if "climb1" in self.qpixmaps else "id1_1"
+            elif state == "CORNER_ARC":
+                phase = getattr(self.engine, "corner_phase", "plant")
+                if phase == "plant": return "climb1"
+                elif phase == "reach": return "climb2"
+                elif phase == "pull": return "climb3"
+                return "climb1"
             elif state == "WALKING":
                 walk = ["walk1", "walk2", "walk3"]
                 return walk[int(anim * 6.0) % len(walk)] if "walk1" in self.qpixmaps else "id1_1"
             elif state == "SITTING":
                 return "id1_1" if int(st * 1.5) % 4 != 0 else "id2_1"
             elif state == "FALLING":
-                fall = ["fall1", "fall2", "fall3"]
-                return fall[int(anim * 4.5) % len(fall)] if "fall1" in self.qpixmaps else "id1_1"
+                fall = [f"fall{i}" for i in range(1, 6) if f"fall{i}" in self.qpixmaps]
+                return fall[int(anim * 5.0) % len(fall)] if fall else "id1_1"
+            elif state in ("SPECIAL", "DANCE"):
+                spec = [f"sp1_{i}" for i in range(1, 9) if f"sp1_{i}" in self.qpixmaps]
+                return spec[int(anim * 6.0) % len(spec)] if spec else "id1_1"
             return "id1_1"
 
     def paintEvent(self, event) -> None:
@@ -182,10 +194,15 @@ class KuttyPetsOverlay(QWidget if HAS_PYQT else object):
         painter.translate(self.engine.x, self.engine.y - self.engine.step_bob_y)
         painter.rotate(math.degrees(self.engine.body_angle))
 
-        # 3D Flip scaling
-        turn_sx = -self.engine.facing_scale
+        # 3D Flip scaling according to character raw facing
+        raw_facing = getattr(self.engine, "raw_facing", "LEFT")
+        if raw_facing == "LEFT":
+            turn_sx = -self.engine.facing_scale
+        else:
+            turn_sx = self.engine.facing_scale
+
         if abs(turn_sx) < 0.08:
-            turn_sx = -0.08 if self.engine.facing_scale >= 0 else 0.08
+            turn_sx = 0.08 if turn_sx >= 0 else -0.08
 
         rs = self.engine.render_scale
         painter.scale(turn_sx * self.engine.scale_x * rs, self.engine.scale_y * rs)

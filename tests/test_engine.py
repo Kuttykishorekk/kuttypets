@@ -81,5 +81,31 @@ class TestOmniPetEngine(unittest.TestCase):
         self.assertFalse(self.engine.is_dragging)
         self.assertEqual(self.engine.state, "FALLING")
 
+    def test_multi_character_alignments(self):
+        chars = discover_characters()
+        for cid in ("hutao", "klee", "ayaka", "venti", "spiderman"):
+            if cid not in chars:
+                continue
+            eng = OmniPetEngine(self.adapter, char_id=cid, render_scale=0.68)
+            rigs = SpriteRigAnalyzer.load_and_rig_character(chars[cid]["path"])
+            eng.set_character_rigs(rigs)
+
+            # 1. Floor / Top stand Y calculation
+            stand_y = eng.compute_stand_y(500.0)
+            self.assertLess(stand_y, 500.0, f"Stand Y for {cid} must be above surface")
+            self.assertGreater(stand_y, 400.0, f"Stand Y for {cid} must be reasonably near surface")
+
+            # 2. Left wall cling X calculation
+            left_cling_x = eng.compute_outward_cling_x(100.0, "LEFT")
+            self.assertLess(left_cling_x, 100.0, f"Left wall cling X for {cid} must be outside window to the left")
+
+            # 3. Right wall cling X calculation
+            right_cling_x = eng.compute_outward_cling_x(900.0, "RIGHT")
+            self.assertGreater(right_cling_x, 900.0, f"Right wall cling X for {cid} must be outside window to the right")
+
+            # 4. Hand reach must be positive and non-zero
+            hand_reach = eng.get_climb_hand_reach()
+            self.assertGreater(hand_reach, 0.0, f"Hand reach for {cid} must be positive")
+
 if __name__ == "__main__":
     unittest.main()

@@ -62,9 +62,7 @@ CHARACTER_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "spiderman": {
         "name": "Spider-Man",
         "format": "shimeji",
-        "hand_offset": 22.0,
-        "feet_offset": 63.0,
-        "hang_feet_offset": 63.0,
+        "raw_facing": "LEFT",
         "climb_raw_facing": "LEFT",
         "particle": "sparkle",
         "can_swing": True,
@@ -73,9 +71,7 @@ CHARACTER_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "hutao": {
         "name": "Hu Tao",
         "format": "genshin",
-        "hand_offset": 16.0,
-        "feet_offset": 63.0,
-        "hang_feet_offset": 48.0,
+        "raw_facing": "RIGHT",
         "climb_raw_facing": "RIGHT",
         "particle": "butterfly",
         "can_swing": False,
@@ -83,9 +79,7 @@ CHARACTER_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "klee": {
         "name": "Klee",
         "format": "genshin",
-        "hand_offset": 15.0,
-        "feet_offset": 63.0,
-        "hang_feet_offset": 46.0,
+        "raw_facing": "RIGHT",
         "climb_raw_facing": "RIGHT",
         "particle": "clover",
         "can_swing": False,
@@ -93,9 +87,7 @@ CHARACTER_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "ayaka": {
         "name": "Kamisato Ayaka",
         "format": "genshin",
-        "hand_offset": 16.0,
-        "feet_offset": 63.0,
-        "hang_feet_offset": 48.0,
+        "raw_facing": "RIGHT",
         "climb_raw_facing": "RIGHT",
         "particle": "sakura",
         "can_swing": False,
@@ -103,9 +95,7 @@ CHARACTER_TEMPLATES: Dict[str, Dict[str, Any]] = {
     "venti": {
         "name": "Venti",
         "format": "genshin",
-        "hand_offset": 16.0,
-        "feet_offset": 65.0,
-        "hang_feet_offset": 48.0,
+        "raw_facing": "RIGHT",
         "climb_raw_facing": "RIGHT",
         "particle": "feather",
         "can_swing": False,
@@ -164,16 +154,16 @@ def discover_characters(base_dir: str | None = None) -> Dict[str, Dict[str, Any]
         # Determine format (shimeji has shime1.png, genshin has id1_1.png / sp1_1.png)
         if any(f.startswith("shime") for f in pngs):
             fmt = "shimeji"
+            def_facing = "LEFT"
         else:
             fmt = "genshin"
+            def_facing = "RIGHT"
         
         template = CHARACTER_TEMPLATES.get(entry, {
             "name": entry.capitalize(),
             "format": fmt,
-            "hand_offset": 18.0 if fmt == "shimeji" else 16.0,
-            "feet_offset": 63.0,
-            "hang_feet_offset": 63.0 if fmt == "shimeji" else 48.0,
-            "climb_raw_facing": "LEFT" if fmt == "shimeji" else "RIGHT",
+            "raw_facing": def_facing,
+            "climb_raw_facing": def_facing,
             "particle": "sparkle",
             "can_swing": (fmt == "shimeji"),
         })

@@ -23,6 +23,7 @@ class OmniPetEngine:
         self.current_char = char_id
         self.presence_mode = presence_mode
         self.render_scale = render_scale
+        self.raw_facing = CHARACTER_TEMPLATES.get(char_id, {}).get("raw_facing", "RIGHT")
 
         # Position and Kinematic Vectors
         self.x: float = 400.0
@@ -79,6 +80,9 @@ class OmniPetEngine:
 
     def set_character_rigs(self, rigs: Dict[str, Dict[str, float]]) -> None:
         self.sprite_rigs = rigs
+        # Update raw facing from discovered templates
+        template = CHARACTER_TEMPLATES.get(self.current_char, {})
+        self.raw_facing = template.get("raw_facing", "RIGHT" if "climb1" in rigs else "LEFT")
 
     def get_current_rig(self, frame_key: str) -> Dict[str, float]:
         return self.sprite_rigs.get(frame_key, {
@@ -90,7 +94,7 @@ class OmniPetEngine:
         })
 
     def upright_foot_reach(self) -> float:
-        for key in ("shime1", "id1_1", "walk1", "shime5", "shime11", "climb1"):
+        for key in ("walk1", "id1_1", "shime1", "shime5", "shime11", "climb1"):
             rig = self.sprite_rigs.get(key)
             if rig and "bottom_reach" in rig:
                 return abs(float(rig["bottom_reach"])) * float(self.render_scale)
@@ -98,26 +102,34 @@ class OmniPetEngine:
 
     def compute_stand_y(self, ground_edge: float) -> float:
         contact = self.upright_foot_reach()
-        rs = max(0.2, float(self.render_scale))
-        dig = max(1.0, 1.8 * rs)
-        return float(ground_edge) - contact + dig
+        return float(ground_edge) - contact
 
     def compute_bottom_cling_y(self, border_bot: float, is_sitting: bool = False) -> float:
         rs = max(0.2, float(self.render_scale))
         if is_sitting:
-            seat_reach = 62.0 * rs
+            seat_reach = 63.0 * rs
             return float(border_bot) - seat_reach
         return float(border_bot) - self.upright_foot_reach()
 
-    def compute_outward_cling_x(self, wall_x: float, side: str, bounds: Dict[str, float]) -> float:
+    def get_climb_hand_reach(self) -> float:
+        """Calculates exact forward reach from sprite center to hands in climbing frames."""
+        for k in ("climb1", "shime12", "climb2", "shime13", "id1_1", "shime1"):
+            rig = self.sprite_rigs.get(k)
+            if rig:
+                if self.raw_facing == "LEFT":
+                    return abs(float(rig.get("left_reach", -20.0)))
+                else:
+                    return abs(float(rig.get("right_reach", 52.0)))
+        return 48.0
+
+    def compute_outward_cling_x(self, wall_x: float, side: str) -> float:
         rs = max(0.2, float(self.render_scale))
-        grip_bite = max(1.2, 2.0 * rs)
+        hand_reach = self.get_climb_hand_reach() * rs
+        grip_bite = max(0.5, 1.2 * rs)
         if side == "RIGHT":
-            contact = float(bounds.get("grip_left_reach", -22.0 * rs))
-            return float(wall_x) - contact - grip_bite
+            return float(wall_x) + hand_reach - grip_bite
         else:
-            contact = float(bounds.get("grip_right_reach", 22.0 * rs))
-            return float(wall_x) - contact + grip_bite
+            return float(wall_x) - hand_reach + grip_bite
 
     def start_drag(self, cursor_x: float, cursor_y: float) -> None:
         """Begins interactive dragging at cursor position."""
@@ -307,9 +319,12 @@ class OmniPetEngine:
                 elif travel < 0 and self.x <= w.x1 + 36.0 and brake < 0.45:
                     self.start_corner(w, "TOP", "LEFT")
             elif self.cling_side in ("LEFT", "RIGHT"):
-                bounds = self.get_current_rig("climb1")
                 wall_x = w.x2 if self.cling_side == "RIGHT" else w.x1
-                self.x = self.compute_outward_cling_x(wall_x, self.cling_side, bounds)
+                self.x = self.compute_outward_cling_x(wall_x, self.cling_side)
+                # When on LEFT wall, window is to the right -> pet faces RIGHT (+1.0)
+                # When on RIGHT wall, window is to the left -> pet faces LEFT (-1.0)
+                self.facing = 1.0 if self.cling_side == "LEFT" else -1.0
+
                 travel_y = 1.0 if self.cling_mode == "WALL_SLIDE" else -1.0
                 brake = KinematicsEngine.edge_end_factor(self.y, w.y_top + 36.0, w.y_bot - 36.0, travel_y)
                 spd = 46.0 * brake * travel_y
@@ -337,9 +352,8 @@ class OmniPetEngine:
 
     def start_corner(self, win: WindowInfo, from_side: str, to_side: str) -> None:
         metrics = self.adapter.get_layout_metrics()
-        bounds = self.get_current_rig("climb1")
-        x_left = self.compute_outward_cling_x(win.x1, "LEFT", bounds)
-        x_right = self.compute_outward_cling_x(win.x2, "RIGHT", bounds)
+        x_left = self.compute_outward_cling_x(win.x1, "LEFT")
+        x_right = self.compute_outward_cling_x(win.x2, "RIGHT")
         stand_bot_y = self.compute_bottom_cling_y(win.y_bot)
 
         meta = KinematicsEngine.compute_corner_geometry(
