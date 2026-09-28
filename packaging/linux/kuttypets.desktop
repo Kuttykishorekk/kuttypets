@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=KuttyPets
+Comment=Dynamic Desktop Pet Companion with Real Biomechanical Physics
+Exec=kuttypets
+Icon=kuttypets
+Terminal=false
+Type=Application
+Categories=Utility;Amusement;
+Keywords=pet;shimeji;desktop;hyprland;companion;spider-man;

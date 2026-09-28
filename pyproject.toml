@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kuttypets"
+version = "1.0.0"
+description = "Cross-Platform Dynamic Desktop Companion with Biomechanical Physics"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "Kutty"}]
+dependencies = [
+    "Pillow>=9.0.0",
+]
+
+[project.optional-dependencies]
+linux = [
+    "PyGObject>=3.40.0",
+    "pycairo>=1.20.0",
+]
+macos = [
+    "pyobjc-framework-Cocoa>=9.0",
+    "pyobjc-framework-Quartz>=9.0",
+]
+windows = [
+    "pywin32>=300",
+]
+
+[project.scripts]
+kuttypets = "kuttypets.main:main"
+
+[tool.setuptools.packages.find]
+include = ["kuttypets*"]
+
+[tool.setuptools.package-data]
+kuttypets = ["characters/**/*"]
