@@ -13,7 +13,7 @@ from PIL import Image
 try:
     from PyQt6.QtWidgets import QApplication, QWidget, QMenu
     from PyQt6.QtCore import Qt, QTimer, QPoint, QRectF
-    from PyQt6.QtGui import QPainter, QPixmap, QImage, QColor, QFont, QAction
+    from PyQt6.QtGui import QPainter, QPixmap, QImage, QColor, QFont, QAction, QMouseEvent
     HAS_PYQT = True
 except ImportError:
     HAS_PYQT = False
@@ -223,33 +223,18 @@ class KuttyPetsOverlay(QWidget if HAS_PYQT else object):
         pos = event.position()
         if self._pet_rect().contains(pos):
             if event.button() == Qt.MouseButton.LeftButton:
-                self.engine.is_dragging = True
-                self.engine.drag_offset_x = pos.x() - self.engine.x
-                self.engine.drag_offset_y = pos.y() - self.engine.y
-                self.engine.mouse_history.clear()
+                self.engine.start_drag(pos.x(), pos.y())
             elif event.button() == Qt.MouseButton.RightButton:
                 self._show_context_menu(event.globalPosition().toPoint())
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self.engine.is_dragging:
             pos = event.position()
-            self.engine.x = pos.x() - self.engine.drag_offset_x
-            self.engine.y = pos.y() - self.engine.drag_offset_y
-            self.engine.mouse_history.append((time.time(), pos.x(), pos.y()))
-            if len(self.engine.mouse_history) > 8:
-                self.engine.mouse_history.pop(0)
+            self.engine.update_drag(pos.x(), pos.y())
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self.engine.is_dragging:
-            self.engine.is_dragging = False
-            # Compute throw impulse
-            if len(self.engine.mouse_history) >= 2:
-                t0, x0, y0 = self.engine.mouse_history[0]
-                t1, x1, y1 = self.engine.mouse_history[-1]
-                dt = max(0.016, t1 - t0)
-                self.engine.vx = (x1 - x0) / dt
-                self.engine.vy = (y1 - y0) / dt
-            self.engine.state = "FALLING"
+            self.engine.end_drag()
 
     def _show_context_menu(self, global_pos: QPoint) -> None:
         menu = QMenu(self)

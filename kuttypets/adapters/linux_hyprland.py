@@ -71,10 +71,10 @@ class LinuxHyprlandAdapter(BaseWindowAdapter):
                 if aw > 60 and ah > 60:
                     windows.append(WindowInfo(
                         address=str(c.get("address", "")),
-                        x1=float(ax) / scale,
-                        x2=float(ax + aw) / scale,
-                        y_top=float(ay) / scale,
-                        y_bot=float(ay + ah) / scale,
+                        x1=float(ax),
+                        x2=float(ax + aw),
+                        y_top=float(ay),
+                        y_bot=float(ay + ah),
                         title=str(c.get("title", "")),
                         app_class=str(c.get("class", "")),
                         is_floating=bool(c.get("floating", False)),
@@ -85,17 +85,15 @@ class LinuxHyprlandAdapter(BaseWindowAdapter):
         aw = self._query("activewindow")
         if not aw or not aw.get("mapped") or aw.get("hidden"):
             return None
-        mons = self._query("monitors")
-        scale = float(mons[0].get("scale", 1.0)) if (mons and isinstance(mons, list)) else 1.0
         
         ax, ay = aw.get("at", [0, 0])
         aw_w, aw_h = aw.get("size", [0, 0])
         return WindowInfo(
             address=str(aw.get("address", "")),
-            x1=float(ax) / scale,
-            x2=float(ax + aw_w) / scale,
-            y_top=float(ay) / scale,
-            y_bot=float(ay + aw_h) / scale,
+            x1=float(ax),
+            x2=float(ax + aw_w),
+            y_top=float(ay),
+            y_bot=float(ay + aw_h),
             title=str(aw.get("title", "")),
             app_class=str(aw.get("class", "")),
             is_active=True,

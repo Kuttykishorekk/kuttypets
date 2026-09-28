@@ -338,17 +338,110 @@ class OmniPetEngine:
             return
 
         # -------------------------------------------------------------
-        # 5. IDLE / SITTING / WALKING
+        # 5. IDLE / SITTING / WALKING / SPECIAL
         # -------------------------------------------------------------
-        if self.state in ("IDLE", "SITTING", "WALKING", "DANCE", "SPECIAL"):
+        profile = PRESENCE_PROFILES.get(self.presence_mode, PRESENCE_PROFILES["calm"])
+        screen_w = screen.get("width", 1920.0)
+
+        if self.state in ("IDLE", "SITTING"):
+            self.vx = 0.0
+            self.step_bob_y = 0.0
             if self.cling_target_window:
                 if self.cling_side == "BOTTOM":
-                    self.y = self.compute_bottom_cling_y(self.cling_target_window.y_bot, is_sitting=(self.state != "WALKING"))
+                    self.y = self.compute_bottom_cling_y(self.cling_target_window.y_bot, is_sitting=True)
                 else:
                     self.y = self.compute_stand_y(self.cling_target_window.y_top)
             else:
                 floor_y = self.compute_stand_y(screen_h - metrics.get("gap_bottom", 0.0))
                 self.y = floor_y
+
+            sit_min, sit_max = profile.get("idle_sit", (3.0, 7.0))
+            if self.state_timer >= sit_min:
+                self.state_timer = 0.0
+                roll = random.random()
+
+                # Check Spider-Man web swinging chance
+                can_swing = CHARACTER_TEMPLATES.get(self.current_char, {}).get("can_swing", False)
+                if can_swing and windows and roll < profile.get("leap_chance", 0.18):
+                    w = random.choice(windows)
+                    self.vx, self.vy = self.web.start_swing(self.x, self.y, w.to_dict())
+                    self.state = "SWINGING"
+                    return
+
+                if roll < 0.72:
+                    self.state = "WALKING"
+                    self.facing = 1.0 if random.random() > 0.5 else -1.0
+                    spd = profile.get("walk_speed", 52.0)
+                    self.vx = spd * self.facing
+                elif roll < 0.90:
+                    self.state = "SPECIAL"
+                    self.vx = 0.0
+                else:
+                    # Hop into air
+                    self.state = "FALLING"
+                    self.vy = -random.uniform(160.0, 240.0)
+                    self.vx = random.uniform(-40.0, 40.0)
+                    return
+
+        elif self.state == "SPECIAL":
+            self.vx = 0.0
+            self.step_bob_y = 0.0
+            if self.cling_target_window:
+                self.y = self.compute_stand_y(self.cling_target_window.y_top)
+            else:
+                self.y = self.compute_stand_y(screen_h - metrics.get("gap_bottom", 0.0))
+
+            if self.state_timer >= 3.5:
+                self.state = "WALKING"
+                self.state_timer = 0.0
+                self.facing = 1.0 if random.random() > 0.5 else -1.0
+                self.vx = profile.get("walk_speed", 52.0) * self.facing
+
+        elif self.state == "WALKING":
+            self.x += self.vx * dt
+            self.step_bob_y = math.sin(self.anim_tick * 12.0) * 1.6 * self.render_scale
+
+            # Spawn subtle stride particles
+            if random.random() < profile.get("slide_particle", 0.08):
+                ptype = CHARACTER_TEMPLATES.get(self.current_char, {}).get("particle", "sparkle")
+                self.particles.emit(1, self.x - self.facing * 12.0 * self.render_scale, self.y + self.upright_foot_reach() * 0.8, ptype)
+
+            # Walking on top of a window
+            if self.cling_target_window:
+                w = self.cling_target_window
+                self.y = self.compute_stand_y(w.y_top)
+
+                if self.vx > 0 and self.x >= w.x2 - 36.0:
+                    if random.random() < 0.65:
+                        self.start_corner(w, "TOP", "RIGHT")
+                        return
+                    else:
+                        self.facing = -1.0
+                        self.vx = -abs(self.vx)
+                elif self.vx < 0 and self.x <= w.x1 + 36.0:
+                    if random.random() < 0.65:
+                        self.start_corner(w, "TOP", "LEFT")
+                        return
+                    else:
+                        self.facing = 1.0
+                        self.vx = abs(self.vx)
+            else:
+                # Walking on desktop floor
+                floor_y = self.compute_stand_y(screen_h - metrics.get("gap_bottom", 0.0))
+                self.y = floor_y
+
+                if self.vx > 0 and self.x >= screen_w - 40.0:
+                    self.facing = -1.0
+                    self.vx = -abs(self.vx)
+                elif self.vx < 0 and self.x <= 40.0:
+                    self.facing = 1.0
+                    self.vx = abs(self.vx)
+
+            # Sit down after walk interval
+            if self.state_timer >= random.uniform(4.0, 9.0):
+                self.state = "SITTING"
+                self.state_timer = 0.0
+                self.vx = 0.0
 
     def start_corner(self, win: WindowInfo, from_side: str, to_side: str) -> None:
         metrics = self.adapter.get_layout_metrics()
