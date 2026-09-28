@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pillow pywin32
+          pip install pyinstaller pillow pywin32 PyQt6
           pip install -e .[windows]
 
       - name: Build Standalone Executable
@@ -64,7 +64,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pillow pyobjc-framework-Cocoa pyobjc-framework-Quartz
+          pip install pyinstaller pillow pyobjc-framework-Cocoa pyobjc-framework-Quartz PyQt6
           pip install -e .[macos]
 
       - name: Build macOS App Bundle
@@ -111,7 +111,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller pillow PyGObject pycairo
+          pip install pyinstaller pillow PyGObject pycairo PyQt6
           pip install -e .[linux]
 
       - name: Build Linux Standalone Binary

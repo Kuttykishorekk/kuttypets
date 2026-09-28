@@ -1,5 +1,5 @@
 """
-OmniPet - Cross-Platform Dynamic Desktop Companion.
+KuttyPets - Cross-Platform Dynamic Desktop Companion.
 Main Entrypoint with automatic OS discovery and adapter selection.
 """
 
@@ -7,30 +7,55 @@ from __future__ import annotations
 import sys
 import os
 import argparse
+from pathlib import Path
 from typing import Optional
 
-from .config import discover_characters, PRESENCE_PROFILES
-from .core.rigs import SpriteRigAnalyzer
-from .core.engine import OmniPetEngine
-from .adapters.base import BaseWindowAdapter
+# Ensure package root is in sys.path when bundled by PyInstaller as standalone script
+pkg_dir = Path(__file__).resolve().parent
+if str(pkg_dir.parent) not in sys.path:
+    sys.path.insert(0, str(pkg_dir.parent))
+if str(pkg_dir) not in sys.path:
+    sys.path.insert(0, str(pkg_dir))
+
+try:
+    from kuttypets.config import discover_characters, PRESENCE_PROFILES
+    from kuttypets.core.rigs import SpriteRigAnalyzer
+    from kuttypets.core.engine import OmniPetEngine
+    from kuttypets.adapters.base import BaseWindowAdapter
+    from kuttypets.core.autostart import AutostartManager
+except ImportError:
+    from config import discover_characters, PRESENCE_PROFILES
+    from core.rigs import SpriteRigAnalyzer
+    from core.engine import OmniPetEngine
+    from adapters.base import BaseWindowAdapter
+    from core.autostart import AutostartManager
 
 def create_adapter() -> BaseWindowAdapter:
     """Instantiates the best window and display adapter for the current operating system."""
     if sys.platform == "darwin":
-        from .adapters.mac_cocoa import MacOSCocoaAdapter
+        try:
+            from kuttypets.adapters.mac_cocoa import MacOSCocoaAdapter
+        except ImportError:
+            from adapters.mac_cocoa import MacOSCocoaAdapter
         print("[KuttyPets] Initializing macOS Cocoa / Quartz Adapter...", flush=True)
         return MacOSCocoaAdapter()
     elif sys.platform == "win32":
-        from .adapters.win32_adapter import Win32Adapter
+        try:
+            from kuttypets.adapters.win32_adapter import Win32Adapter
+        except ImportError:
+            from adapters.win32_adapter import Win32Adapter
         print("[KuttyPets] Initializing Windows Win32 / DWM Adapter...", flush=True)
         return Win32Adapter()
     else:
-        from .adapters.linux_hyprland import LinuxHyprlandAdapter
+        try:
+            from kuttypets.adapters.linux_hyprland import LinuxHyprlandAdapter
+        except ImportError:
+            from adapters.linux_hyprland import LinuxHyprlandAdapter
         print("[KuttyPets] Initializing Linux Hyprland / Wayland Adapter...", flush=True)
         return LinuxHyprlandAdapter()
 
 def main():
-    parser = argparse.ArgumentParser(description="OmniPet - Dynamic Desktop Companion")
+    parser = argparse.ArgumentParser(description="KuttyPets - Dynamic Desktop Companion")
     parser.add_argument("--character", "-c", default="spiderman", help="Character ID (spiderman, hutao, klee, ayaka, venti)")
     parser.add_argument("--mode", "-m", default="calm", choices=["calm", "lively", "stealth"], help="Presence mode")
     parser.add_argument("--scale", "-s", type=float, default=0.68, help="Render scale (default 0.68)")
@@ -41,7 +66,6 @@ def main():
     args = parser.parse_args()
 
     # Handle Autostart management
-    from .core.autostart import AutostartManager
     if args.autostart_enable:
         success = AutostartManager.set_enabled(True)
         print(f"[KuttyPets] Autostart on boot: {'ENABLED' if success else 'FAILED'}", flush=True)
@@ -89,27 +113,27 @@ def main():
     metrics = adapter.get_layout_metrics()
     print(f"[KuttyPets] Display: {screen['width']}x{screen['height']} (scale={screen.get('scale', 1.0)}) | Layout: rounding={metrics.get('rounding')}, border={metrics.get('border_size')}", flush=True)
 
-    # In Linux GTK / PyGObject environment:
-    if sys.platform.startswith("linux"):
-        import gi
-        gi.require_version("Gtk", "3.0")
+    # Launch cross-platform GUI overlay
+    try:
+        from PyQt6.QtWidgets import QApplication
         try:
-            gi.require_version("GtkLayerShell", "0.1")
-            from gi.repository import GtkLayerShell
-        except Exception:
-            GtkLayerShell = None
-        from gi.repository import Gtk, GLib
+            from kuttypets.render.canvas import KuttyPetsOverlay
+        except ImportError:
+            from render.canvas import KuttyPetsOverlay
 
-        # Link engine tick to GTK main loop
-        def _gtk_tick():
-            engine.tick()
-            return True
-
-        GLib.timeout_add(16, _gtk_tick)
-        print("[KuttyPets] Engine loop running. Press Ctrl+C to stop.", flush=True)
-        # Note: If running with full UI window, HyprPet overlay class integrates directly with engine
-    else:
-        print(f"[KuttyPets] Running on {sys.platform}. Core engine initialized successfully.", flush=True)
+        app = QApplication(sys.argv)
+        app.setApplicationName("KuttyPets")
+        overlay = KuttyPetsOverlay(engine, char_dir)
+        sys.exit(app.exec())
+    except Exception as e:
+        print(f"[KuttyPets] PyQt6 overlay unavailable ({e}); running headless engine loop.", flush=True)
+        try:
+            while True:
+                engine.tick()
+                import time
+                time.sleep(0.016)
+        except KeyboardInterrupt:
+            print("[KuttyPets] Exiting cleanly.", flush=True)
 
 if __name__ == "__main__":
     main()

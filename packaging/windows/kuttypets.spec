@@ -4,10 +4,21 @@ block_cipher = None
 
 a = Analysis(
     ['../../kuttypets/main.py'],
-    pathex=[],
+    pathex=['../../'],
     binaries=[],
     datas=[('../../kuttypets/characters', 'kuttypets/characters')],
-    hiddenimports=['win32gui', 'win32con', 'ctypes'],
+    hiddenimports=[
+        'win32gui', 'win32con', 'ctypes', 'winreg',
+        'PyQt6', 'PyQt6.QtCore', 'PyQt6.QtGui', 'PyQt6.QtWidgets',
+        'PIL', 'PIL.Image',
+        'kuttypets', 'kuttypets.config', 'kuttypets.core',
+        'kuttypets.core.engine', 'kuttypets.core.rigs',
+        'kuttypets.core.kinematics', 'kuttypets.core.web_physics',
+        'kuttypets.core.autostart', 'kuttypets.adapters',
+        'kuttypets.adapters.base', 'kuttypets.adapters.win32_adapter',
+        'kuttypets.render', 'kuttypets.render.canvas',
+        'kuttypets.render.particles', 'kuttypets.render.shadows',
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
