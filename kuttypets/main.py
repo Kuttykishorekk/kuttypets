@@ -35,7 +35,25 @@ def main():
     parser.add_argument("--mode", "-m", default="calm", choices=["calm", "lively", "stealth"], help="Presence mode")
     parser.add_argument("--scale", "-s", type=float, default=0.68, help="Render scale (default 0.68)")
     parser.add_argument("--list-characters", action="store_true", help="List all available characters")
+    parser.add_argument("--autostart-enable", action="store_true", help="Enable automatic start on system boot/login")
+    parser.add_argument("--autostart-disable", action="store_true", help="Disable automatic start on system boot/login")
+    parser.add_argument("--autostart-status", action="store_true", help="Check if autostart on boot is currently enabled")
     args = parser.parse_args()
+
+    # Handle Autostart management
+    from .core.autostart import AutostartManager
+    if args.autostart_enable:
+        success = AutostartManager.set_enabled(True)
+        print(f"[KuttyPets] Autostart on boot: {'ENABLED' if success else 'FAILED'}", flush=True)
+        return
+    elif args.autostart_disable:
+        success = AutostartManager.set_enabled(False)
+        print(f"[KuttyPets] Autostart on boot: {'DISABLED' if success else 'FAILED'}", flush=True)
+        return
+    elif args.autostart_status:
+        status = AutostartManager.is_enabled()
+        print(f"[KuttyPets] Autostart on boot status: {'ENABLED' if status else 'DISABLED'}", flush=True)
+        return
 
     # Discover characters
     characters = discover_characters()
