@@ -166,9 +166,10 @@ class OmniPetEngine:
             self.vy = (y1 - y0) / dt
         self.mouse_history.clear()
 
-    def tick(self) -> None:
+    def tick(self, dt: Optional[float] = None) -> None:
         now = time.time()
-        dt = min(0.05, max(0.001, now - self.last_time))
+        if dt is None:
+            dt = min(0.05, max(0.001, now - self.last_time))
         self.last_time = now
         self.update_physics(dt)
 
@@ -220,16 +221,35 @@ class OmniPetEngine:
                 self.corner_phase = "settle"
 
             if u >= 1.0:
+                from_side = self.corner_meta.get("from_side", "TOP")
+                to_side = self.corner_meta.get("to_side", "TOP")
+                w = self.cling_target_window
                 self.state = "CLINGING"
-                self.cling_side = self.corner_meta.get("to_side", "TOP")
+                self.cling_side = to_side
                 self.target_body_angle = 0.0
                 self.body_angle = 0.0
-                if self.cling_side == "BOTTOM":
+                self.state_timer = 0.0
+
+                if to_side == "BOTTOM":
                     self.cling_mode = "BOTTOM_CRAWL"
-                elif self.cling_side == "TOP":
+                    self.cling_orbit = 1 if from_side == "LEFT" else -1
+                    if w:
+                        self.x = w.x1 + 48.0 if from_side == "LEFT" else w.x2 - 48.0
+                elif to_side == "TOP":
                     self.cling_mode = "TOP_CRAWL"
+                    self.cling_orbit = 1 if from_side == "LEFT" else -1
+                    if w:
+                        self.x = w.x1 + 48.0 if from_side == "LEFT" else w.x2 - 48.0
                 else:
-                    self.cling_mode = "CLIMB_UP"
+                    # to_side is "LEFT" or "RIGHT"
+                    if from_side == "TOP":
+                        self.cling_mode = "WALL_SLIDE"  # Crawl DOWN away from top
+                        if w:
+                            self.y = w.y_top + 48.0
+                    else:
+                        self.cling_mode = "CLIMB_UP"    # Crawl UP away from bottom
+                        if w:
+                            self.y = w.y_bot - 48.0
             return
 
         # -------------------------------------------------------------
@@ -301,22 +321,22 @@ class OmniPetEngine:
                 self.vx = spd
                 self.x += self.vx * dt
 
-                if travel > 0 and self.x >= w.x2 - 40.0 and brake < 0.45:
+                if travel > 0 and (self.x >= w.x2 - 42.0 or brake < 0.15):
                     self.start_corner(w, "BOTTOM", "RIGHT")
-                elif travel < 0 and self.x <= w.x1 + 40.0 and brake < 0.45:
+                elif travel < 0 and (self.x <= w.x1 + 42.0 or brake < 0.15):
                     self.start_corner(w, "BOTTOM", "LEFT")
             elif self.cling_side == "TOP":
                 self.y = self.compute_stand_y(w.y_top)
                 travel = 1.0 if self.cling_orbit > 0 else -1.0
                 self.facing = travel
                 brake = KinematicsEngine.edge_end_factor(self.x, w.x1 + 40.0, w.x2 - 40.0, travel)
-                spd = 58.0 * brake * travel
+                spd = max(14.0, 58.0 * brake) * travel
                 self.vx = spd
                 self.x += self.vx * dt
 
-                if travel > 0 and self.x >= w.x2 - 36.0 and brake < 0.45:
+                if travel > 0 and (self.x >= w.x2 - 42.0 or brake < 0.15):
                     self.start_corner(w, "TOP", "RIGHT")
-                elif travel < 0 and self.x <= w.x1 + 36.0 and brake < 0.45:
+                elif travel < 0 and (self.x <= w.x1 + 42.0 or brake < 0.15):
                     self.start_corner(w, "TOP", "LEFT")
             elif self.cling_side in ("LEFT", "RIGHT"):
                 wall_x = w.x2 if self.cling_side == "RIGHT" else w.x1
@@ -327,14 +347,35 @@ class OmniPetEngine:
 
                 travel_y = 1.0 if self.cling_mode == "WALL_SLIDE" else -1.0
                 brake = KinematicsEngine.edge_end_factor(self.y, w.y_top + 36.0, w.y_bot - 36.0, travel_y)
-                spd = 46.0 * brake * travel_y
+                spd = max(12.0, 46.0 * brake) * travel_y
                 self.vy = spd
                 self.y += self.vy * dt
 
-                if travel_y > 0 and self.y >= w.y_bot - 36.0 and brake < 0.45:
+                if travel_y > 0 and (self.y >= w.y_bot - 42.0 or brake < 0.15):
                     self.start_corner(w, self.cling_side, "BOTTOM")
-                elif travel_y < 0 and self.y <= w.y_top + 36.0 and brake < 0.45:
+                elif travel_y < 0 and (self.y <= w.y_top + 42.0 or brake < 0.15):
                     self.start_corner(w, self.cling_side, "TOP")
+
+            # Break out of cling after 8 to 14 seconds of crawling for behavioral variety
+            if self.state_timer >= random.uniform(8.0, 14.0):
+                self.state_timer = 0.0
+                if self.cling_side == "TOP":
+                    self.state = "SITTING"
+                    self.vx = 0.0
+                elif self.cling_side in ("LEFT", "RIGHT"):
+                    can_swing = CHARACTER_TEMPLATES.get(self.current_char, {}).get("can_swing", False)
+                    if can_swing and random.random() < 0.5:
+                        self.vx, self.vy = self.web.start_swing(self.x, self.y, w.to_dict())
+                        self.state = "SWINGING"
+                    else:
+                        self.state = "FALLING"
+                        self.vy = -random.uniform(60.0, 120.0)
+                        self.vx = -self.facing * random.uniform(40.0, 80.0)
+                        self.no_cling_timer = 1.5
+                else:
+                    self.state = "FALLING"
+                    self.vy = random.uniform(20.0, 60.0)
+                    self.no_cling_timer = 1.5
             return
 
         # -------------------------------------------------------------

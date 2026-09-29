@@ -89,6 +89,7 @@ def main():
     parser.add_argument("--character", "-c", default="spiderman", help="Character ID (spiderman, hutao, klee, ayaka, venti)")
     parser.add_argument("--mode", "-m", default="calm", choices=["calm", "lively", "stealth"], help="Presence mode")
     parser.add_argument("--scale", "-s", type=float, default=0.68, help="Render scale (default 0.68)")
+    parser.add_argument("--debug", action="store_true", help="Enable visual physics gizmos and live telemetry HUD")
     parser.add_argument("--list-characters", action="store_true", help="List all available characters")
     parser.add_argument("--headless-check", "--test", action="store_true", help="Run automated headless self-test and exit")
     parser.add_argument("--autostart-enable", action="store_true", help="Enable automatic start on system boot/login")
@@ -172,7 +173,7 @@ def main():
 
         app = QApplication(sys.argv)
         app.setApplicationName("KuttyPets")
-        overlay = KuttyPetsOverlay(engine, char_dir)
+        overlay = KuttyPetsOverlay(engine, char_dir, debug_mode=args.debug)
         sys.exit(app.exec())
     except Exception as e:
         print(f"[KuttyPets] PyQt6 overlay unavailable ({e}); running headless engine loop.", flush=True)

@@ -22,12 +22,13 @@ except ImportError:
 class KuttyPetsOverlay(QWidget if HAS_PYQT else object):
     """Transparent, frameless, click-through desktop overlay for KuttyPets."""
 
-    def __init__(self, engine, char_frames_dir: str):
+    def __init__(self, engine, char_frames_dir: str, debug_mode: bool = False):
         if not HAS_PYQT:
             raise RuntimeError("PyQt6 is required for desktop overlay rendering.")
         super().__init__()
         self.engine = engine
         self.char_frames_dir = char_frames_dir
+        self.debug_mode = debug_mode
         self.qpixmaps: Dict[str, QPixmap] = {}
         self._load_pixmaps()
 
@@ -212,6 +213,33 @@ class KuttyPetsOverlay(QWidget if HAS_PYQT else object):
         ph = pixmap.height()
         painter.drawPixmap(int(-pw * 0.5), int(-ph * 0.5), pixmap)
         painter.restore()
+
+        # 4. Draw Physics Gizmos & Telemetry HUD (Debug Mode)
+        if self.debug_mode:
+            # Draw Tracked Window Hitboxes
+            windows = self.engine.adapter.get_windows()
+            painter.setPen(QColor(0, 255, 128, 200))
+            painter.setBrush(QColor(0, 255, 128, 25))
+            for w in windows:
+                painter.drawRect(int(w.x1), int(w.y_top), int(w.x2 - w.x1), int(w.y_bot - w.y_top))
+                painter.drawText(int(w.x1 + 8), int(w.y_top + 18), f"{w.title[:20]} [{int(w.x1)},{int(w.y_top)}]")
+
+            # Draw Velocity Vector Arrow
+            vx, vy = self.engine.vx, self.engine.vy
+            painter.setPen(QColor(0, 220, 255, 230))
+            painter.drawLine(int(self.engine.x), int(self.engine.y), int(self.engine.x + vx * 0.25), int(self.engine.y + vy * 0.25))
+
+            # Draw Foot Contact Anchor Point
+            painter.setBrush(QColor(255, 60, 100, 230))
+            painter.setPen(Qt.PenStyle.NoPen)
+            foot_y = self.engine.y + self.engine.upright_foot_reach()
+            painter.drawEllipse(QPoint(int(self.engine.x), int(foot_y)), 4, 4)
+
+            # Draw Telemetry HUD
+            painter.setPen(QColor(255, 255, 255, 240))
+            painter.setFont(QFont("Monospace", 9))
+            hud = f"STATE: {self.engine.state} | POS: ({self.engine.x:.1f}, {self.engine.y:.1f}) | VEL: ({self.engine.vx:.1f}, {self.engine.vy:.1f}) | ANGLE: {math.degrees(self.engine.body_angle):.1f}°"
+            painter.drawText(int(self.engine.x - 140), int(self.engine.y - 65), hud)
 
     def _pet_rect(self) -> QRectF:
         rs = self.engine.render_scale
