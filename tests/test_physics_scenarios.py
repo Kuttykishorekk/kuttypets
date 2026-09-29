@@ -160,14 +160,16 @@ class TestPhysicsScenarios(unittest.TestCase):
         self.engine.cling_orbit = 1
 
         dt = 1.0 / 60.0
-        # Run through the corner arc (approx 30 ticks = 0.5s)
-        for _ in range(40):
+        # Run through approach and corner arc until on the right wall
+        for _ in range(70):
             self.engine.tick(dt=dt)
+            if self.engine.state == "CLINGING" and self.engine.cling_side == "RIGHT":
+                break
 
         # Pet must now be on the RIGHT wall, moving DOWN
         self.assertEqual(self.engine.cling_side, "RIGHT")
         self.assertEqual(self.engine.cling_mode, "WALL_SLIDE")
-        self.assertGreater(self.engine.y, target_win.y_top + 40.0)
+        self.assertGreater(self.engine.y, target_win.y_top)
 
         # Run 30 more ticks down the wall; assert it does NOT oscillate back to TOP
         initial_wall_y = self.engine.y

@@ -58,10 +58,11 @@ class OmniPetEngine:
         self.gait_phase: float = 0.0
         self.no_cling_timer: float = 0.0
 
-        # Corner Arcs
+        # Corner Arcs & Cooldown
         self.corner_t: float = 0.0
         self.corner_meta: Optional[Dict[str, Any]] = None
         self.corner_phase: str = "plant"
+        self.corner_cooldown: float = 0.0
 
         # Web Swinging (Spider-Man)
         self.web = WebPhysicsEngine(self.gravity)
@@ -122,6 +123,31 @@ class OmniPetEngine:
                     return abs(float(rig.get("right_reach", 52.0)))
         return 48.0
 
+    def get_sprite_half_width(self) -> float:
+        """Dynamic horizontal half-width based on loaded character rigs and render scale."""
+        for key in ("walk1", "id1_1", "shime1", "shime11", "climb1"):
+            rig = self.sprite_rigs.get(key)
+            if rig and "right_reach" in rig and "left_reach" in rig:
+                return (abs(float(rig["right_reach"])) + abs(float(rig["left_reach"]))) * 0.5 * float(self.render_scale)
+        return 32.0 * float(self.render_scale)
+
+    def get_corner_clearance_margin(self) -> float:
+        """Dynamic clearance margin away from corner vertices."""
+        rs = max(0.2, float(self.render_scale))
+        metrics = self.adapter.get_layout_metrics()
+        rounding = float(metrics.get("rounding", 8.0))
+        border = float(metrics.get("border_size", 1.0))
+        hand = self.get_climb_hand_reach() * rs
+        return max(24.0 * rs, rounding + border + hand * 0.7)
+
+    def get_edge_trigger_margin(self) -> float:
+        """Dynamic edge deceleration trigger margin based on character scale and layout metrics."""
+        rs = max(0.2, float(self.render_scale))
+        metrics = self.adapter.get_layout_metrics()
+        rounding = float(metrics.get("rounding", 8.0))
+        half_w = self.get_sprite_half_width()
+        return max(20.0 * rs, half_w * 0.9 + rounding * 0.5)
+
     def compute_outward_cling_x(self, wall_x: float, side: str) -> float:
         rs = max(0.2, float(self.render_scale))
         hand_reach = self.get_climb_hand_reach() * rs
@@ -180,6 +206,8 @@ class OmniPetEngine:
 
         if self.no_cling_timer > 0:
             self.no_cling_timer = max(0.0, self.no_cling_timer - dt)
+        if self.corner_cooldown > 0:
+            self.corner_cooldown = max(0.0, self.corner_cooldown - dt)
 
         # Smooth 3D turning perspective interpolation
         self.facing_scale += (self.facing - self.facing_scale) * min(1.0, dt * 16.0)
@@ -192,6 +220,23 @@ class OmniPetEngine:
         screen = self.adapter.get_screen_geometry()
         metrics = self.adapter.get_layout_metrics()
         screen_h = screen["height"]
+
+        # Keep cling_target_window in sync with live window movement / closing
+        if self.cling_target_window:
+            matched = False
+            for w in windows:
+                if w.address == self.cling_target_window.address:
+                    self.cling_target_window = w
+                    matched = True
+                    break
+            if not matched and self.state in ("CLINGING", "CORNER_ARC"):
+                # Window was closed or moved off-screen: release pet cleanly into freefall
+                self.state = "FALLING"
+                self.cling_target_window = None
+                self.corner_meta = None
+                self.vx = 0.0
+                self.vy = 40.0
+                return
 
         # -------------------------------------------------------------
         # 1. CORNER ARC
@@ -229,27 +274,29 @@ class OmniPetEngine:
                 self.target_body_angle = 0.0
                 self.body_angle = 0.0
                 self.state_timer = 0.0
+                self.corner_cooldown = 1.0  # Prevent immediate corner re-trigger
 
+                clearance = self.get_corner_clearance_margin()
                 if to_side == "BOTTOM":
                     self.cling_mode = "BOTTOM_CRAWL"
                     self.cling_orbit = 1 if from_side == "LEFT" else -1
                     if w:
-                        self.x = w.x1 + 48.0 if from_side == "LEFT" else w.x2 - 48.0
+                        self.x = w.x1 + clearance if from_side == "LEFT" else w.x2 - clearance
                 elif to_side == "TOP":
                     self.cling_mode = "TOP_CRAWL"
                     self.cling_orbit = 1 if from_side == "LEFT" else -1
                     if w:
-                        self.x = w.x1 + 48.0 if from_side == "LEFT" else w.x2 - 48.0
+                        self.x = w.x1 + clearance if from_side == "LEFT" else w.x2 - clearance
                 else:
                     # to_side is "LEFT" or "RIGHT"
                     if from_side == "TOP":
                         self.cling_mode = "WALL_SLIDE"  # Crawl DOWN away from top
                         if w:
-                            self.y = w.y_top + 48.0
+                            self.y = w.y_top + clearance
                     else:
                         self.cling_mode = "CLIMB_UP"    # Crawl UP away from bottom
                         if w:
-                            self.y = w.y_bot - 48.0
+                            self.y = w.y_bot - clearance
             return
 
         # -------------------------------------------------------------
@@ -310,78 +357,88 @@ class OmniPetEngine:
         # -------------------------------------------------------------
         # 4. CLINGING (Perimeter Crawl / Wall Climb)
         # -------------------------------------------------------------
-        if self.state == "CLINGING" and self.cling_target_window:
+        profile = PRESENCE_PROFILES.get(self.presence_mode, PRESENCE_PROFILES["calm"])
+        edge_margin = self.get_edge_trigger_margin()
+        slow_dist = max(32.0 * self.render_scale, edge_margin * 1.6)
+        base_spd = profile.get("walk_speed", 52.0)
+        crawl_spd = max(18.0, base_spd * max(0.4, float(self.render_scale)))
+
+        if self.state == "CLINGING":
+            if not self.cling_target_window:
+                self.state = "FALLING"
+                self.vy = 40.0
+                return
             w = self.cling_target_window
             if self.cling_side == "BOTTOM":
                 self.y = self.compute_bottom_cling_y(w.y_bot)
                 travel = 1.0 if self.cling_orbit > 0 else -1.0
                 self.facing = travel
-                brake = KinematicsEngine.edge_end_factor(self.x, w.x1 + 44.0, w.x2 - 44.0, travel)
-                spd = 54.0 * brake * travel
+                brake = KinematicsEngine.edge_end_factor(self.x, w.x1 + edge_margin, w.x2 - edge_margin, travel, slow_dist=slow_dist)
+                spd = max(16.0, crawl_spd * brake) * travel
                 self.vx = spd
                 self.x += self.vx * dt
 
-                if travel > 0 and (self.x >= w.x2 - 42.0 or brake < 0.15):
-                    self.start_corner(w, "BOTTOM", "RIGHT")
-                elif travel < 0 and (self.x <= w.x1 + 42.0 or brake < 0.15):
-                    self.start_corner(w, "BOTTOM", "LEFT")
+                if self.corner_cooldown <= 0:
+                    if travel > 0 and (self.x >= w.x2 - edge_margin or brake < 0.15):
+                        self.start_corner(w, "BOTTOM", "RIGHT")
+                    elif travel < 0 and (self.x <= w.x1 + edge_margin or brake < 0.15):
+                        self.start_corner(w, "BOTTOM", "LEFT")
             elif self.cling_side == "TOP":
                 self.y = self.compute_stand_y(w.y_top)
                 travel = 1.0 if self.cling_orbit > 0 else -1.0
                 self.facing = travel
-                brake = KinematicsEngine.edge_end_factor(self.x, w.x1 + 40.0, w.x2 - 40.0, travel)
-                spd = max(14.0, 58.0 * brake) * travel
+                brake = KinematicsEngine.edge_end_factor(self.x, w.x1 + edge_margin, w.x2 - edge_margin, travel, slow_dist=slow_dist)
+                spd = max(16.0, crawl_spd * brake) * travel
                 self.vx = spd
                 self.x += self.vx * dt
 
-                if travel > 0 and (self.x >= w.x2 - 42.0 or brake < 0.15):
-                    self.start_corner(w, "TOP", "RIGHT")
-                elif travel < 0 and (self.x <= w.x1 + 42.0 or brake < 0.15):
-                    self.start_corner(w, "TOP", "LEFT")
+                if self.corner_cooldown <= 0:
+                    if travel > 0 and (self.x >= w.x2 - edge_margin or brake < 0.15):
+                        self.start_corner(w, "TOP", "RIGHT")
+                    elif travel < 0 and (self.x <= w.x1 + edge_margin or brake < 0.15):
+                        self.start_corner(w, "TOP", "LEFT")
             elif self.cling_side in ("LEFT", "RIGHT"):
                 wall_x = w.x2 if self.cling_side == "RIGHT" else w.x1
                 self.x = self.compute_outward_cling_x(wall_x, self.cling_side)
-                # When on LEFT wall, window is to the right -> pet faces RIGHT (+1.0)
-                # When on RIGHT wall, window is to the left -> pet faces LEFT (-1.0)
                 self.facing = 1.0 if self.cling_side == "LEFT" else -1.0
 
                 travel_y = 1.0 if self.cling_mode == "WALL_SLIDE" else -1.0
-                brake = KinematicsEngine.edge_end_factor(self.y, w.y_top + 36.0, w.y_bot - 36.0, travel_y)
-                spd = max(12.0, 46.0 * brake) * travel_y
+                brake = KinematicsEngine.edge_end_factor(self.y, w.y_top + edge_margin, w.y_bot - edge_margin, travel_y, slow_dist=slow_dist)
+                spd = max(14.0, (crawl_spd * 0.85) * brake) * travel_y
                 self.vy = spd
                 self.y += self.vy * dt
 
-                if travel_y > 0 and (self.y >= w.y_bot - 42.0 or brake < 0.15):
-                    self.start_corner(w, self.cling_side, "BOTTOM")
-                elif travel_y < 0 and (self.y <= w.y_top + 42.0 or brake < 0.15):
-                    self.start_corner(w, self.cling_side, "TOP")
+                if self.corner_cooldown <= 0:
+                    if travel_y > 0 and (self.y >= w.y_bot - edge_margin or brake < 0.15):
+                        self.start_corner(w, self.cling_side, "BOTTOM")
+                    elif travel_y < 0 and (self.y <= w.y_top + edge_margin or brake < 0.15):
+                        self.start_corner(w, self.cling_side, "TOP")
 
-            # Break out of cling after 8 to 14 seconds of crawling for behavioral variety
-            if self.state_timer >= random.uniform(8.0, 14.0):
+            # Break out of cling after 4 to 8 seconds of crawling for active variety
+            if self.state_timer >= random.uniform(4.5, 8.0):
                 self.state_timer = 0.0
                 if self.cling_side == "TOP":
                     self.state = "SITTING"
                     self.vx = 0.0
                 elif self.cling_side in ("LEFT", "RIGHT"):
                     can_swing = CHARACTER_TEMPLATES.get(self.current_char, {}).get("can_swing", False)
-                    if can_swing and random.random() < 0.5:
+                    if can_swing and random.random() < 0.6:
                         self.vx, self.vy = self.web.start_swing(self.x, self.y, w.to_dict())
                         self.state = "SWINGING"
                     else:
                         self.state = "FALLING"
                         self.vy = -random.uniform(60.0, 120.0)
-                        self.vx = -self.facing * random.uniform(40.0, 80.0)
+                        self.vx = -self.facing * random.uniform(50.0, 90.0)
                         self.no_cling_timer = 1.5
                 else:
                     self.state = "FALLING"
-                    self.vy = random.uniform(20.0, 60.0)
+                    self.vy = random.uniform(30.0, 70.0)
                     self.no_cling_timer = 1.5
             return
 
         # -------------------------------------------------------------
         # 5. IDLE / SITTING / WALKING / SPECIAL
         # -------------------------------------------------------------
-        profile = PRESENCE_PROFILES.get(self.presence_mode, PRESENCE_PROFILES["calm"])
         screen_w = screen.get("width", 1920.0)
 
         if self.state in ("IDLE", "SITTING"):
@@ -412,7 +469,7 @@ class OmniPetEngine:
                 if roll < 0.72:
                     self.state = "WALKING"
                     self.facing = 1.0 if random.random() > 0.5 else -1.0
-                    spd = profile.get("walk_speed", 52.0)
+                    spd = max(24.0, profile.get("walk_speed", 52.0) * max(0.4, float(self.render_scale)))
                     self.vx = spd * self.facing
                 elif roll < 0.90:
                     self.state = "SPECIAL"
@@ -436,7 +493,8 @@ class OmniPetEngine:
                 self.state = "WALKING"
                 self.state_timer = 0.0
                 self.facing = 1.0 if random.random() > 0.5 else -1.0
-                self.vx = profile.get("walk_speed", 52.0) * self.facing
+                spd = max(24.0, profile.get("walk_speed", 52.0) * max(0.4, float(self.render_scale)))
+                self.vx = spd * self.facing
 
         elif self.state == "WALKING":
             self.x += self.vx * dt
@@ -452,15 +510,15 @@ class OmniPetEngine:
                 w = self.cling_target_window
                 self.y = self.compute_stand_y(w.y_top)
 
-                if self.vx > 0 and self.x >= w.x2 - 36.0:
-                    if random.random() < 0.65:
+                if self.vx > 0 and self.x >= w.x2 - edge_margin:
+                    if random.random() < 0.65 and self.corner_cooldown <= 0:
                         self.start_corner(w, "TOP", "RIGHT")
                         return
                     else:
                         self.facing = -1.0
                         self.vx = -abs(self.vx)
-                elif self.vx < 0 and self.x <= w.x1 + 36.0:
-                    if random.random() < 0.65:
+                elif self.vx < 0 and self.x <= w.x1 + edge_margin:
+                    if random.random() < 0.65 and self.corner_cooldown <= 0:
                         self.start_corner(w, "TOP", "LEFT")
                         return
                     else:
@@ -471,10 +529,10 @@ class OmniPetEngine:
                 floor_y = self.compute_stand_y(screen_h - metrics.get("gap_bottom", 0.0))
                 self.y = floor_y
 
-                if self.vx > 0 and self.x >= screen_w - 40.0:
+                if self.vx > 0 and self.x >= screen_w - edge_margin:
                     self.facing = -1.0
                     self.vx = -abs(self.vx)
-                elif self.vx < 0 and self.x <= 40.0:
+                elif self.vx < 0 and self.x <= edge_margin:
                     self.facing = 1.0
                     self.vx = abs(self.vx)
 
@@ -485,6 +543,7 @@ class OmniPetEngine:
                 self.vx = 0.0
 
     def start_corner(self, win: WindowInfo, from_side: str, to_side: str) -> None:
+        self.cling_target_window = win
         metrics = self.adapter.get_layout_metrics()
         x_left = self.compute_outward_cling_x(win.x1, "LEFT")
         x_right = self.compute_outward_cling_x(win.x2, "RIGHT")
@@ -501,6 +560,7 @@ class OmniPetEngine:
         if not meta:
             self.state = "CLINGING"
             self.cling_side = to_side
+            self.corner_cooldown = 1.0
             return
         
         meta["from_side"] = from_side
