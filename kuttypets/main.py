@@ -42,6 +42,24 @@ except ImportError:
     from adapters.base import BaseWindowAdapter
     from core.autostart import AutostartManager
 
+_single_instance_handle = None
+
+def acquire_single_instance_lock() -> bool:
+    """Prevents multiple duplicate companion instances from running on the desktop."""
+    global _single_instance_handle
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\KuttyPets_SingleInstance_Mutex")
+            ERROR_ALREADY_EXISTS = 183
+            if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+                return False
+            _single_instance_handle = mutex
+            return True
+        except Exception:
+            return True
+    return True
+
 def create_adapter() -> BaseWindowAdapter:
     """Instantiates the best window and display adapter for the current operating system."""
     if sys.platform == "darwin":
@@ -77,6 +95,11 @@ def main():
     parser.add_argument("--autostart-disable", action="store_true", help="Disable automatic start on system boot/login")
     parser.add_argument("--autostart-status", action="store_true", help="Check if autostart on boot is currently enabled")
     args = parser.parse_args()
+
+    # Prevent multiple duplicate instances running simultaneously
+    if not acquire_single_instance_lock():
+        print("[KuttyPets] Another instance is already running on this desktop. Exiting.", flush=True)
+        return
 
     # Handle Autostart management
     if args.autostart_enable:
